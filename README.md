@@ -4,8 +4,8 @@ Lab sessions exercises.
 Course Roadmap:
 - [x] OMP
 - [x] MPI
-- [] CUDA
-- [] SIMD
+- [ ] CUDA
+- [ ] SIMD
 
 For more info visit:
 https://www.moreno.marzolla.name/teaching/HPC/
