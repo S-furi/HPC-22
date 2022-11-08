@@ -75,7 +75,7 @@ To execute:
 
 int main( int argc, char *argv[] )
 {
-    int my_rank, comm_sz, K = 10;
+    int my_rank, comm_sz, K = 10, v;
 
     MPI_Init( &argc, &argv );
     MPI_Comm_rank( MPI_COMM_WORLD, &my_rank );
@@ -84,7 +84,26 @@ int main( int argc, char *argv[] )
     if ( argc > 1 ) {
         K = atoi(argv[1]);
     }
-    /* [TODO] Rest of the code here... */
+
+    const int prev = (my_rank - 1 + comm_sz) % comm_sz;
+    const int next = (my_rank + 1) % comm_sz;
+
+    if (0 == my_rank) {
+      v = 1;
+      MPI_Send(&v, 1, MPI_INT, next, 0, MPI_COMM_WORLD);
+    }
+
+    for(int k=0; k<K; k++) {
+      MPI_Recv(&v, 1, MPI_INT, prev, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      if (0 != my_rank || k < K - 1) {
+        v++;
+        MPI_Send(&v, 1, MPI_INT, next, 0, MPI_COMM_WORLD);
+      }
+    }
+
+    if (0 == my_rank) {
+      printf("Using %d processes, the sum with K=%d is: %d\n", comm_sz, K, v);
+    }
 
     MPI_Finalize();
     return EXIT_SUCCESS;
