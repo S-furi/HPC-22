@@ -95,7 +95,7 @@ Example:
 #include <stdlib.h> /* for rand() */
 #include <time.h>   /* for time() */
 #include <assert.h>
-#include <mpi.h>
+#include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h>
 
 void fill(int *v, int n)
 {
@@ -103,6 +103,13 @@ void fill(int *v, int n)
     for (i=0; i<n; i++) {
         v[i] = (rand() % 100);
     }
+}
+
+void exclusive_scan(int *x, int *s, int n) {
+  s[0] = 0;
+  for(int i=1; i<n; i++) {
+    s[i] = s[i-1] + x[i-1];
+  }
 }
 
 int main( int argc, char *argv[] )
@@ -133,26 +140,26 @@ int main( int argc, char *argv[] )
     }
 
     /* [TODO] replace the following code block with the one below */
-    if (my_rank == 0) {
+    /* if (my_rank == 0) { */
 
-        /* Count the number of occurrences of `KEY` in `v[]` */
-        nf = 0;
-        for (i=0; i<n; i++) {
-            if (v[i] == KEY)
-                nf++;
-        }
+    /*     /1* Count the number of occurrences of `KEY` in `v[]` *1/ */
+    /*     nf = 0; */
+    /*     for (i=0; i<n; i++) { */
+    /*         if (v[i] == KEY) */
+    /*             nf++; */
+    /*     } */
 
-        /* allocate the result array */
-        result = (int*)malloc(nf * sizeof(*result)); assert(result != NULL);
+    /*     /1* allocate the result array *1/ */
+    /*     result = (int*)malloc(nf * sizeof(*result)); assert(result != NULL); */
 
-        /* fill the result array  */
-        for (r=0, i=0; i<n; i++) {
-            if (v[i] == KEY) {
-                result[r] = i;
-                r++;
-            }
-        }
-    }
+    /*     /1* fill the result array  *1/ */
+    /*     for (r=0, i=0; i<n; i++) { */
+    /*         if (v[i] == KEY) { */
+    /*             result[r] = i; */
+    /*             r++; */
+    /*         } */
+    /*     } */
+    /* } */
 
     int *local_v = NULL;        /* local portion of `v[]` */
     int local_nf = 0;           /* n. of occurrences of `KEY` in `local_v[]` */
@@ -163,24 +170,21 @@ int main( int argc, char *argv[] )
     /**
      ** Step 1: distribute `v[]` across all MPI processes
      **/
-    /*
-    const int local_size = ... ;
-    local_v = ... ;
-    MPI_Scatter(sendbuf,
-                sendcount,
-                sendtype,
-                recvbuf,
-                secfcount,
-                recvtype,
-                root,
-                MPI_COMM_WORLD);
-    */
+    const int local_size = n / comm_sz;
+    local_v = (int*)malloc((n/comm_sz) * sizeof(int));
+
+    MPI_Scatter(v, local_size, MPI_INT, local_v, local_size, MPI_INT, 0, MPI_COMM_WORLD);
 
     /**
      ** Step 2: each process computes the number of occurrences of
      ** `KEY` in `local_v[]`
      **/
-    /* [TODO] */
+    const int offset = my_rank*local_size;
+    for (int i = 0; i < local_size; i++) {
+      if (local_v[i] == KEY) {
+        local_nf++;
+      }
+    }
 
     /**
      ** Step 3: each process allocates an array `local_resul[]` where
@@ -188,34 +192,34 @@ int main( int argc, char *argv[] )
      ** It is essential that the positions refer to `v[]`, not to
      ** `local_v[]`.
      **/
-    /* [TODO] */
 
-    /*
-      local_result = (int*)malloc( local_nf * sizeof(*local_result) );
-      assert(local_result != NULL);
+    local_result = (int*)malloc( local_nf * sizeof(*local_result) );
+    assert(local_result != NULL);
 
-      Fill local_result[] here appropriately...
-    */
+    int j = 0;
+
+    for(int i = 0; j < local_nf && i < local_size; i++) {
+      if(local_v[i] == KEY) {
+        local_result[j] = i + offset; 
+        j++;
+      }
+    }
+
+    for(int i = 0; i < local_nf; i++) {
+      printf("local_result[%d]:%d of proc %d\n", i, local_result[i], my_rank);
+    }
 
     /**
      ** Step 4: Process 0 gathers all values `local_nf` into a local
      ** array `recvcounts[]` of size `comm_sz`
      **/
-    /*
+
     if (my_rank == 0) {
         displs = (int*)malloc( comm_sz * sizeof(*displs) ); assert(displs != NULL);
         recvcounts = (int*)malloc( comm_sz * sizeof(*recvcounts) ); assert(recvcounts != NULL);
     }
 
-    MPI_Gather(sendbuf,
-               sendcount,
-               sendtype,
-               recvbuf,
-               recvcount,
-               recvtype,
-               root,
-               MPI_COMM_WORLD);
-    */
+    MPI_Gather(&local_nf, 1, MPI_INT, recvcounts, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     /**
      ** Step 5: process 0 performs an exclusive scan of `recvcounts[]`
@@ -224,23 +228,32 @@ int main( int argc, char *argv[] )
      ** occurrences received from all processes.
      **/
     if (my_rank == 0) {
-        /* [TODO] */
+      exclusive_scan(recvcounts, displs, comm_sz);
+
+      for(int i = 0; i < comm_sz; i++) {
+        printf("displs[%d]:%d\n", i, displs[i]);
+        nf += recvcounts[i];
+      }
+      printf("nf:%d\n", nf);
+      result = (int*)malloc(nf * sizeof(int));
+      assert(result != NULL);
     }
 
     /**
      ** Step 6: process 0 gathers `local_result[]` into `result[]`
      **/
-    /*
-    MPI_Gather(sendbuf,
-               sendcount,
-               sendtype,
-               recvbuf,
-               recvcounts,
-               displacements,
-               recvtype,.
-               root,
-               MPI_COMM_WORLD);
-    */
+
+    MPI_Gatherv(local_result, /* sendbuf, */ 
+                local_nf,     /* sendcount, */ 
+                MPI_INT,      /* sendtype, */ 
+                result,       /* recvbuf, */ 
+                recvcounts,   /* recvcounts, */ 
+                displs,       /* displs, */
+                MPI_INT,      /* recvtype, */ 
+                0,            /* root, */ 
+                MPI_COMM_WORLD/* comm */
+                );
+
 
     free(displs);
     free(recvcounts);
