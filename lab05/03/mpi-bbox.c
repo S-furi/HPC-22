@@ -91,7 +91,7 @@ Example:
 #include <stdlib.h>
 #include <math.h> /* for fminf() */
 #include <assert.h>
-#include <mpi.h>
+#include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h>
 
 /* Compute the bounding box of |n| rectangles whose opposite vertices
    have coordinates (|x1[i]|, |y1[i]|), (|x2[i]|, |y2[i]|). The
@@ -154,6 +154,7 @@ int main( int argc, char* argv[] )
             MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
         }
 
+
         x1 = (float*)malloc(N * sizeof(*x1)); assert(x1 != NULL);
         y1 = (float*)malloc(N * sizeof(*y1)); assert(y1 != NULL);
         x2 = (float*)malloc(N * sizeof(*x2)); assert(x2 != NULL);
@@ -167,12 +168,33 @@ int main( int argc, char* argv[] )
             assert(y1[i] > y2[i]);
         }
         fclose(in);
+    }
 
-        /* Compute the bounding box */
-        bbox( x1, y1, x2, y2, N, &xb1, &yb1, &xb2, &yb2 );
+    MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-        /* Print bounding box */
-        printf("bbox: %f %f %f %f\n", xb1, yb1, xb2, yb2);
+    float local_xb1, local_yb1, local_xb2, local_yb2;
+    const int local_n = N / comm_sz;
+    float *local_x1 = (float*)malloc(local_n * sizeof(*local_x1));
+    float *local_y1 = (float*)malloc(local_n * sizeof(*local_y1));
+    float *local_x2 = (float*)malloc(local_n * sizeof(*local_x2));
+    float *local_y2 = (float*)malloc(local_n * sizeof(*local_y2));
+
+    MPI_Scatter(x1, local_n, MPI_FLOAT, local_x1, local_n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    MPI_Scatter(y1, local_n, MPI_FLOAT, local_y1, local_n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    MPI_Scatter(x2, local_n, MPI_FLOAT, local_x2, local_n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    MPI_Scatter(y2, local_n, MPI_FLOAT, local_y2, local_n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+    bbox(local_x1, local_y1, local_x2, local_y2, local_n, 
+        &local_xb1, &local_yb1, &local_xb2, &local_yb2);
+
+   MPI_Reduce(&local_xb1, &xb1, 1, MPI_FLOAT, MPI_MIN, 0, MPI_COMM_WORLD);
+   MPI_Reduce(&local_yb1, &yb1, 1, MPI_FLOAT, MPI_MAX, 0, MPI_COMM_WORLD);
+   MPI_Reduce(&local_xb2, &xb2, 1, MPI_FLOAT, MPI_MAX, 0, MPI_COMM_WORLD);
+   MPI_Reduce(&local_yb2, &yb2, 1, MPI_FLOAT, MPI_MIN, 0, MPI_COMM_WORLD);
+
+    if (0 == my_rank) {
+      /* Print bounding box */
+      printf("bbox: %f %f %f %f\n", xb1, yb1, xb2, yb2);
     }
 
     /* Free the memory */
@@ -180,6 +202,10 @@ int main( int argc, char* argv[] )
     free(y1);
     free(x2);
     free(y2);
+    free(local_x1);
+    free(local_y1);
+    free(local_x2);
+    free(local_y2);
     MPI_Finalize();
 
     return EXIT_SUCCESS;
