@@ -70,7 +70,7 @@ To execute:
 - [mpi-send-col.c](mpi-send-col.c)
 
 ***/
-#include <mpi.h>
+#include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -126,8 +126,41 @@ int main( int argc, char *argv[] )
         init_matrix(&my_mat[0][0], SIZE, SIZE*SIZE);
     }
 
-    /* [TODO] Exchange borders here */
+    int count = SIZE, blocklen = 1, stride = SIZE + 2;
+    MPI_Datatype columntype;
+    MPI_Type_vector(count, blocklen, stride, MPI_INT, &columntype);
+    MPI_Type_commit(&columntype);
 
+    const int other = 1 - my_rank;
+    MPI_Sendrecv( 
+                  &my_mat[0][SIZE],     /* sendbuf, */ 
+                  1,                        /* sendcount, */ 
+                  columntype,               /* sendtype, */ 
+                  other,                    /* dest, */ 
+                  0,                        /* sendtag, */ 
+                  &my_mat[0][0],            /* recvbuf, */ 
+                  1,                        /* recvcount, */
+                  columntype,               /* recvtype, */ 
+                  other,                    /* source, */ 
+                  0,                        /* recvtag, */ 
+                  MPI_COMM_WORLD,           /* comm, */ 
+                  MPI_STATUSES_IGNORE       /* status */
+                  );
+
+    MPI_Sendrecv( 
+                  &my_mat[0][1],     /* sendbuf, */ 
+                  1,                        /* sendcount, */ 
+                  columntype,               /* sendtype, */ 
+                  other,                    /* dest, */ 
+                  0,                        /* sendtag, */ 
+                  &my_mat[0][SIZE + 1],            /* recvbuf, */ 
+                  1,                        /* recvcount, */
+                  columntype,               /* recvtype, */ 
+                  other,                    /* source, */ 
+                  0,                        /* recvtag, */ 
+                  MPI_COMM_WORLD,           /* comm, */ 
+                  MPI_STATUSES_IGNORE       /* status */
+                  );
     /* Print the matrices after the exchange; to do so without
        interference we must use this funny strategy: process 0 prints,
        then the processes synchronize, then process 1 prints. */
