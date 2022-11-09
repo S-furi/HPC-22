@@ -161,7 +161,7 @@ The output is stored to a file `rule30.pbm`
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <mpi.h>
+#include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h>
 
 /* Note: the MPI datatype corresponding to "signed char" is MPI_CHAR */
 typedef signed char cell_t;
@@ -312,26 +312,27 @@ int main( int argc, char* argv[] )
 
     /* compute the rank of the next and previous process on the
        chain. These will be used to exchange the boundary */
-    /*
-    const int rank_next = ...
-    const int rank_prev = ...
-    */
+
+    const int rank_next = (my_rank + 1) % comm_sz;
+    const int rank_prev = (my_rank - 1 + comm_sz) % comm_sz;
 
     /* compute the size of each local domain; this should be set to
        `width / comm_sz + 2*HALO`, since it must include the ghost
        cells */
-    /*
-      const int local_width = ...
-      const int local_ext_width = ...
-    */
+
+    const int local_width = width / comm_sz;
+    const int local_ext_width = local_width + 2*HALO;
 
     /* `local_cur` and `local_next` are the local domains, handled by
        each MPI process. They both have `local_ext_width` elements each */
-    /*
-      cell_t *local_cur = ...
-      cell_t *local_next = ...
-    */
 
+    cell_t *local_cur = (cell_t*)malloc(local_ext_width * sizeof(*local_cur));
+    cell_t *local_next = (cell_t*)malloc(local_ext_width * sizeof(*local_next));
+
+    assert(local_cur != NULL);
+    assert(local_next != NULL);
+ 
+    /* fanno riferimento al dominio globale */
     const int LEFT_GHOST = 0;
     const int LEFT = LEFT_GHOST + HALO;
     const int RIGHT = LEFT + width - 1;
@@ -342,22 +343,22 @@ int main( int argc, char* argv[] )
        type MPI_INT. Note: the parallel version does not require ghost
        cells in cur[], so it would be possible to allocate exactly
        `width` elements in cur[]. */
-    /*
-      const int LOCAL_LEFT_GHOST = ...
-      const int LOCAL_LEFT = ...
-      const int LOCAL_RIGHT = ...
-      const int LOCAL_RIGHT_GHOST = ...
+      const int LOCAL_LEFT_GHOST = 0;
+      const int LOCAL_LEFT = LOCAL_LEFT_GHOST + 1;
+      const int LOCAL_RIGHT = LOCAL_LEFT + local_width - 1;
+      const int LOCAL_RIGHT_GHOST = LOCAL_RIGHT + 1;
 
-      MPI_Scatter( sendbuf,
-                   sendcount,
-                   datatype,
-                   recvbuf,
-                   recvcount,
-                   datatype,
-                   root,
-                   MPI_COMM_WORLD
+      /* cur[] comprende la ghost area, ricordiamo che non e' da mettere */
+      /* &cur[LEFT] indice del primo vero elemento */
+      MPI_Scatter( &cur[LEFT]           /* sendbuf */,
+                   local_width          /* sendcount */,
+                   MPI_CHAR             /* datatype */,
+                   &local_cur[LEFT]     /* recvbuf */,
+                   local_width          /* recvcount */,
+                   MPI_CHAR             /* datatype */,
+                   0                    /* root */, 
+                   MPI_COMM_WORLD       /* MPI_COMM_WORLD*/
       );
-    */
 
     for (s=0; s<steps; s++) {
 
@@ -378,21 +379,20 @@ int main( int argc, char* argv[] )
                            local_cur
 
         */
-        /*
-        MPI_Sendrecv( sendbuf,
-                      sendcount,
-                      datatype,
-                      dest,
-                      sendtag,
-                      recvbuf,
-                      recvcount,
-                      datatype,
-                      source,
-                      recvtag,
-                      MPI_COMM_WORLD,
-                      MPI_STATUS_IGNORE
+        /*  */
+        MPI_Sendrecv( &local_cur[LOCAL_RIGHT],      /* sendbuf, */
+                      1,                            /* sendcount, */
+                      MPI_CHAR,                     /* datatype, */
+                      rank_next,                    /* dest, */
+                      0,                            /* sendtag, */
+                      &local_cur[LOCAL_LEFT_GHOST], /* recvbuf, */
+                      1,                            /* recvcount, */
+                      MPI_CHAR,                     /* datatype, */
+                      rank_prev,                    /* source, */
+                      0,                            /* recvtag, */
+                      MPI_COMM_WORLD,               /* MPI_COMM_WORLD, */
+                      MPI_STATUS_IGNORE             /* MPI_STATUS_IGNORE */
                       );
-        */
 
         /* send left boundary to left neighbor; receive right boundary
            from right neighbor
@@ -405,61 +405,50 @@ int main( int argc, char* argv[] )
                            local_cur
 
         */
-        /*
-        MPI_Sendrecv( sendbuf,
-                      sendcount,
-                      datatype,
-                      dest,
-                      sendtag,
-                      recvbuf,
-                      recvcount,
-                      datatype,
-                      source,
-                      recvtag,
-                      MPI_COMM_WORLD,
-                      MPI_STATUS_IGNORE
+        MPI_Sendrecv( &local_cur[LOCAL_LEFT],     /* sendbuf, */
+                      1,                          /* sendcount, */
+                      MPI_CHAR,                   /* datatype, */
+                      rank_prev,                  /* dest, */
+                      0,                          /* sendtag, */
+                      &local_cur[LOCAL_RIGHT_GHOST], /* recvbuf, */
+                      1,                          /* recvcount, */
+                      MPI_CHAR,                   /* datatype, */
+                      rank_next,                  /* source, */
+                      0,                          /* recvtag, */
+                      MPI_COMM_WORLD,             /* MPI_COMM_WORLD, */
+                      MPI_STATUS_IGNORE           /* MPI_STATUS_IGNORE */
                       );
-        */
 
-        /* [TODO] in the parallel version, all processes must execute
-           the "step()" function on ther local domains */
-        if (0 == my_rank) {
-            cur[LEFT_GHOST] = cur[RIGHT];
-            cur[RIGHT_GHOST] = cur[LEFT];
-            step(cur, next, ext_width);
-        }
+        step(local_cur, local_next, local_ext_width);
 
         /* Gather the updated local domains at the root; it is
            possible to gather the result at cur[] instead than next[];
            actually, in the parallel version, next[] is not needed at
            all. */
-        /*
-        MPI_Gather( sendbuf,
-                    sendcount,
-                    datatype,
-                    recvbuf,
-                    recvcount,
-                    datatype,
-                    root,
-                    MPI_COMM_WORLD
+        /* non includere nella gather le ghost areas */
+
+        MPI_Gather( &local_next[LOCAL_LEFT],        /* sendbuf, */
+                    local_width,                    /* sendcount, */
+                    MPI_CHAR,                       /* datatype, */
+                    &cur[LEFT],                     /* recvbuf, */
+                    local_width,                    /* recvcount, */
+                    MPI_CHAR,                       /* datatype, */
+                    0,                              /* root, */
+                    MPI_COMM_WORLD                  /* MPI_COMM_WORLD */
                     );
-        */
-
+        
         /* swap current and next domain */
-        /*
-          [TODO] swap local_cur and local_next
-         */
 
-        if (0 == my_rank) {
-            tmp = cur;
-            cur = next;
-            next = tmp;
-        }
+        tmp = local_cur;
+        local_cur = local_next;
+        local_next = tmp;
     }
 
     /* All done, free memory */
     free(next);
     free(cur);
+    free(local_cur);
+    free(local_next);
 
     if ( 0 == my_rank ) {
         fclose(out);
