@@ -95,7 +95,8 @@ Example:
 #include <stdlib.h> /* for rand() */
 #include <time.h>   /* for time() */
 #include <assert.h>
-#include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h>
+/* #include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h> */
+#include <mpi.h>
 
 void fill(int *v, int n)
 {

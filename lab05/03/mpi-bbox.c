@@ -91,7 +91,8 @@ Example:
 #include <stdlib.h>
 #include <math.h> /* for fminf() */
 #include <assert.h>
-#include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h>
+/* #include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h> */
+#include <mpi.h>
 
 /* Compute the bounding box of |n| rectangles whose opposite vertices
    have coordinates (|x1[i]|, |y1[i]|), (|x2[i]|, |y2[i]|). The

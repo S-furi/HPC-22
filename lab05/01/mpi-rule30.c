@@ -161,7 +161,8 @@ The output is stored to a file `rule30.pbm`
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h>
+/* #include </usr/lib/aarch64-linux-gnu/openmpi/include/mpi.h> */
+#include <mpi.h>
 
 /* Note: the MPI datatype corresponding to "signed char" is MPI_CHAR */
 typedef signed char cell_t;
