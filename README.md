@@ -4,7 +4,7 @@ Lab sessions exercises.
 Course Roadmap:
 - [x] OMP
 - [x] MPI
-- [ ] CUDA
+- [x] CUDA
 - [ ] SIMD
 
 ### Side Notes
