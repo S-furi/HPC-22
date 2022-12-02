@@ -5,7 +5,7 @@ Course Roadmap:
 - [x] OMP
 - [x] MPI
 - [x] CUDA
-- [ ] SIMD
+- [x] SIMD
 
 ### Side Notes
 - For each exercise the executable is included:
