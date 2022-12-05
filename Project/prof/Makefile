@@ -26,9 +26,9 @@ gui: sph.gui
 all: $(EXE)
 
 sph.gui: CFLAGS+=-DGUI
-sph.gui: LDLIBS+=-lglut -lGL -lX11 -L/opt/homebrew/Cellar/freeglut/3.4.0/lib
+sph.gui: LDLIBS+=-lglut -lGL -lX11
 sph.gui: sph.c
-	gcc-12 $(CFLAGS) $< $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) $< $(LDLIBS) -o $@
 
 clean:
 	\rm -f $(EXE) *.o *~
