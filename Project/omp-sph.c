@@ -41,6 +41,7 @@
 #include <math.h>
 #include <assert.h>
 #include "hpc.h"
+#include <omp.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -274,10 +275,16 @@ void integrate( void )
 float avg_velocities( void )
 {
     double result = 0.0;
-    for (int i=0; i<n_particles; i++) {
-        /* the hypot(x,y) function is equivalent to sqrt(x*x +
-           y*y); */
+    const int num_threads = omp_get_max_threads();
+#pragma omp parallel reduction (+:result) default(none) shared(particles, n_particles, num_threads)
+    {
+      const int my_id = omp_get_thread_num();
+      const int my_start = (n_particles * my_id) / num_threads;
+      const int my_end = (n_particles * (my_id + 1)) / num_threads;
+
+      for(int i = my_start; i < my_end; i++) {
         result += hypot(particles[i].vx, particles[i].vy) / n_particles;
+      }
     }
     return result;
 }
