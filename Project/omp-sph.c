@@ -246,6 +246,7 @@ void compute_forces( void )
 
 void integrate( void )
 {
+#pragma omp parallel for default(none) shared(DT, particles, n_particles, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT)
     for (int i=0; i<n_particles; i++) {
         particle_t *p = &particles[i];
         // forward Euler integration
@@ -278,7 +279,7 @@ float avg_velocities( void )
 {
     double result = 0.0;
     const int num_threads = omp_get_max_threads();
-#pragma omp parallel reduction (+:result) default(none) shared(particles, n_particles, num_threads)
+#pragma omp parallel reduction(+:result) default(none) shared(particles, n_particles, num_threads)
     {
       const int my_id = omp_get_thread_num();
       const int my_start = (n_particles * my_id) / num_threads;
