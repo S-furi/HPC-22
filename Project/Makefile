@@ -13,7 +13,7 @@
 #
 # Last modified on 2022-11-27 by Moreno Marzolla
 
-EXE:=sph sph.gui
+EXE:=sph sph.gui omp-sph
 CFLAGS+=-std=c99 -Wall -Wpedantic
 LDLIBS=-lm
 
