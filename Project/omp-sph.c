@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include "hpc.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -177,6 +178,8 @@ void compute_density_pressure( void )
     for (int i=0; i<n_particles; i++) {
         particle_t *pi = &particles[i];
         pi->rho = 0.0;
+        /* Every loop creating a thread pool */
+#pragma omp parallel for default(none) shared(particles, n_particles, pi, MASS, HSQ, POLY6)
         for (int j=0; j<n_particles; j++) {
             const particle_t *pj = &particles[j];
 
@@ -185,7 +188,11 @@ void compute_density_pressure( void )
             const float d2 = dx*dx + dy*dy;
 
             if (d2 < HSQ) {
+              /* TO BE CHANGED */
+#pragma omp critical
+              {
                 pi->rho += MASS * POLY6 * pow(HSQ - d2, 3.0);
+              }
             }
         }
         pi->p = GAS_CONST * (pi->rho - REST_DENS);
@@ -416,6 +423,7 @@ int main(int argc, char **argv)
     }
 
     init_sph(n);
+    const double t_start = hpc_gettime();
     for (int s=0; s<nsteps; s++) {
         update();
         /* the average velocities MUST be computed at each step, even
@@ -425,6 +433,8 @@ int main(int argc, char **argv)
         if (s % 10 == 0)
             printf("step %5d, avgV=%f\n", s, avg);
     }
+    const double elapsed = hpc_gettime() - t_start;
+    printf("Elapsed=%fs\n", elapsed);
 #endif
     free(particles);
     return EXIT_SUCCESS;
