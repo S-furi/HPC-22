@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include "hpc.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -416,6 +417,7 @@ int main(int argc, char **argv)
     }
 
     init_sph(n);
+    const double t_start = hpc_gettime();
     for (int s=0; s<nsteps; s++) {
         update();
         /* the average velocities MUST be computed at each step, even
@@ -425,6 +427,8 @@ int main(int argc, char **argv)
         if (s % 10 == 0)
             printf("step %5d, avgV=%f\n", s, avg);
     }
+    const double t_end = hpc_gettime() - t_start;
+    printf("Elapsed time=%fs\n", t_end);
 #endif
     free(particles);
     return EXIT_SUCCESS;
