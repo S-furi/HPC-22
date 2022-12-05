@@ -1,2 +1,6 @@
 *.ppm
 *.pbm
+
+# project executable
+*sph
+*sph.gui
