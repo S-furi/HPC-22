@@ -190,10 +190,8 @@ void compute_density_pressure( void )
 
             if (d2 < HSQ) {
               /* TO BE CHANGED */
-#pragma omp critical
-              {
-                pi->rho += MASS * POLY6 * pow(HSQ - d2, 3.0);
-              }
+#pragma omp atomic
+              pi->rho += MASS * POLY6 * pow(HSQ - d2, 3.0);
             }
         }
         pi->p = GAS_CONST * (pi->rho - REST_DENS);
@@ -209,6 +207,7 @@ void compute_forces( void )
     const float VISC_LAP = 40.0 / (M_PI * pow(H, 5));
     const float EPS = 1e-6;
 
+#pragma omp parallel for default(none) shared(particles, n_particles, SPIKY_GRAD, VISC_LAP, EPS, MASS, VISC, H, Gy, Gx)
     for (int i=0; i<n_particles; i++) {
         particle_t *pi = &particles[i];
         float fpress_x = 0.0, fpress_y = 0.0;
@@ -237,8 +236,11 @@ void compute_forces( void )
         }
         const float fgrav_x = Gx * MASS / pi->rho;
         const float fgrav_y = Gy * MASS / pi->rho;
-        pi->fx = fpress_x + fvisc_x + fgrav_x;
-        pi->fy = fpress_y + fvisc_y + fgrav_y;
+#pragma omp critical
+        {
+          pi->fx = fpress_x + fvisc_x + fgrav_x;
+          pi->fy = fpress_y + fvisc_y + fgrav_y;
+        }
     }
 }
 
