@@ -13,7 +13,7 @@
 #
 # Last modified on 2022-11-27 by Moreno Marzolla
 
-EXE:=sph sph.gui omp-sph
+EXE:=sph sph.gui omp-sph omp-sph.gui
 CFLAGS+=-std=c99 -Wall -Wpedantic
 LDLIBS=-lm
 
@@ -23,6 +23,8 @@ sph: sph.c
 
 omp-sph: omp-sph.c
 	gcc -fopenmp -std=c99 -Wall -Wpedantic omp-sph.c -o omp-sph -lm
+omp-sph.gui: omp-sph.c
+	gcc -fopenmp -std=c99 -Wall -Wpedantic -DGUI omp-sph.c -lm -lglut -lGL -lX11 -o omp-sph.gui
 
 gui: sph.gui
 
