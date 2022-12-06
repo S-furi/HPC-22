@@ -179,8 +179,9 @@ void compute_density_pressure( void )
     for (int i=0; i<n_particles; i++) {
         particle_t *pi = &particles[i];
         pi->rho = 0.0;
+        double partial_res = 0.0;
         /* Every loop creating a thread pool */
-#pragma omp parallel for default(none) shared(particles, n_particles, pi, MASS, HSQ, POLY6)
+#pragma omp parallel for default(none) reduction(+:partial_res) shared(particles, n_particles, pi, MASS, HSQ, POLY6)
         for (int j=0; j<n_particles; j++) {
             const particle_t *pj = &particles[j];
 
@@ -189,11 +190,10 @@ void compute_density_pressure( void )
             const float d2 = dx*dx + dy*dy;
 
             if (d2 < HSQ) {
-              /* TO BE CHANGED */
-#pragma omp atomic
-              pi->rho += MASS * POLY6 * pow(HSQ - d2, 3.0);
+              partial_res += MASS * POLY6 * pow(HSQ - d2, 3.0);
             }
         }
+        pi->rho = partial_res;
         pi->p = GAS_CONST * (pi->rho - REST_DENS);
     }
 }
