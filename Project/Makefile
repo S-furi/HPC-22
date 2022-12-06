@@ -26,6 +26,9 @@ omp-sph: omp-sph.c
 omp-sph.gui: omp-sph.c
 	gcc -fopenmp -std=c99 -Wall -Wpedantic -DGUI omp-sph.c -lm -lglut -lGL -lX11 -o omp-sph.gui
 
+mpi-sph: mpi-sph.c
+	mpicc -std=c99 -Wall -Wpedantic -o mpi-sph mpi-sph.c -lm
+
 gui: sph.gui
 
 all: $(EXE)
