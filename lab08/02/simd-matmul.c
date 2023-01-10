@@ -180,8 +180,8 @@ void simd_matmul_tr( const double *p, const double* q, double *r, int n)
   for(i = 0; i < n; i++) {
     for(j = 0; j < n; j++) {
       v2d vv = { 0.0, 0.0 };
-      vp = (v2d*)(p + i*n);
-      vqT = (v2d*)(qT + j*n);
+      vp = (v2d*)(p + i*n); // get the ref to i-th row
+      vqT = (v2d*)(qT + j*n); // get the ref to j-th col
       for(k=0; k < n - VLEN + 1; k+=VLEN) {
         vv += (*vp) * (*vqT);
         vp++;
