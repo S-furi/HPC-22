@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include "./mpi.h"
 #include "../hpc.h"
 
 #ifndef M_PI
@@ -417,7 +418,19 @@ int main(int argc, char **argv)
     }
 
     init_sph(n);
-    const double t_start = hpc_gettime();
+
+    double t_start = 0.0;
+    /* MPI initialize */
+    int my_rank, comm_sz;
+    MPI_Init( &argc, &argv );
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
+    
+
+    if (0 == my_rank) {
+      t_start = hpc_gettime();
+    }
+
     for (int s=0; s<nsteps; s++) {
         update();
         /* the average velocities MUST be computed at each step, even
@@ -427,8 +440,12 @@ int main(int argc, char **argv)
         if (s % 10 == 0)
             printf("step %5d, avgV=%f\n", s, avg);
     }
-    const double t_end = hpc_gettime() - t_start;
-    printf("Elapsed time=%fs\n", t_end);
+    if (0 == my_rank){
+      const double t_end = hpc_gettime() - t_start;
+      printf("Elapsed time=%fs\n", t_end);
+    }
+
+    MPI_Finalize();
 #endif
     free(particles);
     return EXIT_SUCCESS;
