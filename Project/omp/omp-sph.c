@@ -175,15 +175,14 @@ void compute_density_pressure( void )
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
        et al. */
     const float POLY6 = 4.0 / (M_PI * pow(H, 8));
-    float partial_rho = 0.0;
 
-
+#pragma omp parallel default(none) shared(n_particles, particles, HSQ, POLY6, GAS_CONST, REST_DENS, MASS)
+  {
     for (int i=0; i<n_particles; i++) {
       particle_t *pi = &particles[i];
       pi->rho = 0.0;
-      partial_rho = 0.0;
-#pragma omp parallel for reduction(+:partial_rho) default(none) \
-      shared(n_particles, particles, pi, HSQ, POLY6, GAS_CONST, REST_DENS, MASS)
+      float partial_rho = 0.0;
+#pragma omp parallel for reduction(+:partial_rho) 
       for (int j=0; j<n_particles; j++) {
         const particle_t *pj = &particles[j];
 
@@ -199,6 +198,7 @@ void compute_density_pressure( void )
       pi->rho  = partial_rho;
       pi->p = GAS_CONST * (pi->rho - REST_DENS);
     }
+  }
 }
 
 void compute_forces( void )
