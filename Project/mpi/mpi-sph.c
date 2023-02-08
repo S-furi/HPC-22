@@ -99,6 +99,8 @@ typedef struct {
 particle_t *particles;
 int n_particles = 0;    // number of currently active particles
 
+MPI_Datatype particletype;
+
 /**
  * Return a random value in [a, b]
  */
@@ -398,36 +400,53 @@ int main(int argc, char **argv)
 #else
     int n = DAM_PARTICLES;
     int nsteps = 50;
-
-    if (argc > 3) {
-        fprintf(stderr, "Usage: %s [nparticles [nsteps]]\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (argc > 1) {
-        n = atoi(argv[1]);
-    }
-
-    if (argc > 2) {
-        nsteps = atoi(argv[2]);
-    }
-
-    if (n > MAX_PARTICLES) {
-        fprintf(stderr, "FATAL: the maximum number of particles is %d\n", MAX_PARTICLES);
-        return EXIT_FAILURE;
-    }
-
-    init_sph(n);
-
     double t_start = 0.0;
-    /* MPI initialize */
+
+    /* MPI initialization */
     int my_rank, comm_sz;
     MPI_Init( &argc, &argv );
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
-    
+
+    /* MPI Struct Datatype creation */
+    MPI_Datatype oldtypes[1];
+    int blklens[1];
+    MPI_Aint displs[1];
+
+    oldtypes[0] = MPI_FLOAT;
+    blklens[0] = 8;
+    displs[0] = 0;
+
+    /* define structured type and commit it */
+    MPI_Type_create_struct(1,        /* count                     */
+                           blklens,  /* array of blocklen         */
+                           displs,   /* array of displacements    */
+                           oldtypes, /* array of types            */
+                           &particletype);
+
+  MPI_Type_commit(&particletype);
 
     if (0 == my_rank) {
+      if (argc > 3) {
+        fprintf(stderr, "Usage: %s [nparticles [nsteps]]\n", argv[0]);
+        return EXIT_FAILURE;
+      }
+
+      if (argc > 1) {
+        n = atoi(argv[1]);
+      }
+
+      if (argc > 2) {
+        nsteps = atoi(argv[2]);
+      }
+
+      if (n > MAX_PARTICLES) {
+        fprintf(stderr, "FATAL: the maximum number of particles is %d\n", MAX_PARTICLES);
+        return EXIT_FAILURE;
+      }
+
+      init_sph(n);
+
       t_start = hpc_gettime();
     }
 
@@ -437,13 +456,15 @@ int main(int argc, char **argv)
            if it is not shown (to ensure constant workload per
            iteration) */
         const float avg = avg_velocities();
-        if (s % 10 == 0)
+        if (0 == my_rank && s % 10 == 0)
             printf("step %5d, avgV=%f\n", s, avg);
     }
     if (0 == my_rank){
       const double t_end = hpc_gettime() - t_start;
       printf("Elapsed time=%fs\n", t_end);
     }
+
+    particle_t* recvParticles = (particle_t*)malloc(sizeof(*particles));
 
     MPI_Finalize();
 #endif
