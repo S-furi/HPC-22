@@ -442,9 +442,6 @@ int main(int argc, char **argv) {
   MPI_Bcast(particles, n_particles, particletype, 0, MPI_COMM_WORLD);
 
   printf("%d) Ricevuto buffer\n", my_rank);
-  for(int i = 0; i < n_particles; i++) {
-    printf("%d) %f\n", my_rank, particles[i].x);
-  }
 
   for (int s = 0; s < nsteps; s++) {
     update();
