@@ -438,6 +438,14 @@ int main(int argc, char **argv) {
     t_start = hpc_gettime();
   }
 
+  MPI_Bcast(&n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(particles, n_particles, particletype, 0, MPI_COMM_WORLD);
+
+  printf("%d) Ricevuto buffer\n", my_rank);
+  for(int i = 0; i < n_particles; i++) {
+    printf("%d) %f\n", my_rank, particles[i].x);
+  }
+
   for (int s = 0; s < nsteps; s++) {
     update();
     /* the average velocities MUST be computed at each step, even
@@ -451,8 +459,6 @@ int main(int argc, char **argv) {
     const double t_end = hpc_gettime() - t_start;
     printf("Elapsed time=%fs\n", t_end);
   }
-
-  particle_t *recvParticles = (particle_t *)malloc(sizeof(*particles));
 
   MPI_Finalize();
 #endif
