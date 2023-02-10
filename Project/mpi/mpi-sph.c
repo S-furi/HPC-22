@@ -106,6 +106,11 @@ MPI_Datatype particletype;
 
 int my_rank = 0;
 
+/* Scatterv/Gatherv offsets arrays */
+
+int *sendcounts = NULL;
+int *displs = NULL;
+
 /**
  * Return a random value in [a, b]
  */
@@ -282,24 +287,26 @@ float avg_velocities(void) {
 void update(void) {
   compute_density_pressure();
 
-  MPI_Allgather(w_particles,   /* sendbuf   */
-                w_n_particles, /* sendcount */
-                particletype,  /* sendtype  */
-                particles,     /* recvbuf   */
-                w_n_particles, /* recvcount */
-                particletype,  /* recvtype  */
-                MPI_COMM_WORLD /* comm      */
+  MPI_Allgatherv(w_particles,  /* sendbuf       */
+                w_n_particles, /* sendcount     */
+                particletype,  /* sendtype      */
+                particles,     /* recvbuf       */
+                sendcounts,    /* recvcounts    */
+                displs,        /* displacements */
+                particletype,  /* recvtype      */
+                MPI_COMM_WORLD /* comm          */
   );
 
   compute_forces();
 
-  MPI_Allgather(w_particles,   /* sendbuf   */
-                w_n_particles, /* sendcount */
-                particletype,  /* sendtype  */
-                particles,     /* recvbuf   */
-                w_n_particles, /* recvcount */
-                particletype,  /* recvtype  */
-                MPI_COMM_WORLD /* comm      */
+  MPI_Allgatherv(w_particles,  /* sendbuf       */
+                w_n_particles, /* sendcount     */
+                particletype,  /* sendtype      */
+                particles,     /* recvbuf       */
+                sendcounts,    /* recvcounts    */
+                displs,        /* displacements */
+                particletype,  /* recvtype      */
+                MPI_COMM_WORLD /* comm          */
   );
 
   integrate();
@@ -423,16 +430,16 @@ int main(int argc, char **argv) {
 
   MPI_Datatype oldtype[1];
   int blklens[1];
-  MPI_Aint displs[1];
+  MPI_Aint displ[1];
 
   oldtype[0] = MPI_FLOAT;
   blklens[0] = 8;
-  displs[0] = 0;
+  displ[0] = 0;
 
   /* define structured type and commit it */
   MPI_Type_create_struct(1,       /* count                     */
                          blklens, /* array of blocklen         */
-                         displs,  /* array of displacements    */
+                         displ,  /* array of displacements    */
                          oldtype, /* array of types            */
                          &particletype);
 
@@ -458,23 +465,28 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
     }
 
-    if (n % comm_sz != 0) {
-      printf("By now, provide a number of processes that is divisible by the "
-             "number of particles\n");
-      return EXIT_FAILURE;
-    }
-
-    w_n_particles = n / comm_sz;
-
     init_sph(n);
   }
 
+  /* Preparing Scatterv/Gatherv parameters */
+  sendcounts = (int*)malloc(comm_sz * sizeof(*sendcounts)); assert(sendcounts != NULL);
+  displs = (int*)malloc(comm_sz * sizeof(*displs)); assert(displs != NULL);
+
   MPI_Bcast(&n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Bcast(&w_n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  /* compute starting and ending position of each block */
+  for(int i = 0; i < comm_sz; i++) {
+    const int local_start = n_particles * i / comm_sz;
+    const int local_end = n_particles * (i + 1) / comm_sz;
+    const int blklen = local_end - local_start;
+    sendcounts[i] = blklen;
+    displs[i] = local_start;
+  }
+
+  w_n_particles = sendcounts[my_rank];
+  w_particles = (particle_t *)malloc(w_n_particles * sizeof(*w_particles));
 
   MPI_Bcast(particles, n_particles, particletype, 0, MPI_COMM_WORLD);
-
-  w_particles = (particle_t *)malloc(w_n_particles * sizeof(*w_particles));
 
   if (0 == my_rank) {
     tstart = hpc_gettime();
@@ -482,25 +494,27 @@ int main(int argc, char **argv) {
 
   for (int s = 0; s < nsteps; s++) {
 
-    MPI_Scatter(particles,     /* senbuf    */
-                w_n_particles, /* sendcount */
-                particletype,  /* sendtype  */
-                w_particles,   /* recvbuf   */
-                w_n_particles, /* recvcount */
-                particletype,  /* recvtype  */
-                0,             /* root      */
-                MPI_COMM_WORLD /* comm       */
+    MPI_Scatterv(particles,    /* senbuf        */
+                sendcounts,    /* sendcounts     */
+                displs,        /* displacements */ 
+                particletype,  /* sendtype      */
+                w_particles,   /* recvbuf       */
+                w_n_particles, /* recvcount     */
+                particletype,  /* recvtype      */
+                0,             /* root          */
+                MPI_COMM_WORLD /* comm          */
     );
 
     update();
 
-    MPI_Allgather(w_particles,   /* sendbuf   */
-                  w_n_particles, /* sendcount */
-                  particletype,  /* sendtype  */
-                  particles,     /* recvbuf   */
-                  w_n_particles, /* recvcount */
-                  particletype,  /* recvtype  */
-                  MPI_COMM_WORLD /* comm       */
+    MPI_Allgatherv(w_particles,  /* sendbuf       */
+                  w_n_particles, /* sendcount     */
+                  particletype,  /* sendtype      */
+                  particles,     /* recvbuf       */
+                  sendcounts,    /* recvcounts    */
+                  displs,        /* displacements */
+                  particletype,  /* recvtype      */
+                  MPI_COMM_WORLD /* comm          */
     );
 
     /* the average velocities MUST be computed at each step, even
