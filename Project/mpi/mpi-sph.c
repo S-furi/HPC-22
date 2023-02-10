@@ -271,10 +271,10 @@ void integrate(void) {
 
 float avg_velocities(void) {
   double result = 0.0;
-  for (int i = 0; i < n_particles; i++) {
+  for (int i = 0; i < w_n_particles; i++) {
     /* the hypot(x,y) function is equivalent to sqrt(x*x +
        y*y); */
-    result += hypot(particles[i].vx, particles[i].vy) / n_particles;
+    result += hypot(w_particles[i].vx, w_particles[i].vy) / n_particles;
   }
   return result;
 }
@@ -468,30 +468,37 @@ int main(int argc, char **argv) {
  
   for (int s = 0; s < nsteps; s++) {
 
-    MPI_Scatter(particles,
-                w_n_particles,
-                particletype,
-                w_particles,
-                w_n_particles,
-                particletype,
-                0,
-                MPI_COMM_WORLD);
+    MPI_Scatter(particles,      /* senbuf*/
+                w_n_particles,  /* sendcount */
+                particletype,   /* sendtype */
+                w_particles,    /* recvbuf */
+                w_n_particles,  /* recvcount */
+                particletype,   /* recvtype */
+                0,              /* root */
+                MPI_COMM_WORLD  /* comm */
+                );
 
     update();
+
+    MPI_Allgather(w_particles,      /* sendbuf */
+                  w_n_particles,    /* sendcount */
+                  particletype,     /* sendtype */
+                  particles,        /* recvbuf */
+                  w_n_particles,    /* recvcount */
+                  particletype,     /* recvtype */
+                  MPI_COMM_WORLD    /* comm */
+                  );
+
     /* the average velocities MUST be computed at each step, even
        if it is not shown (to ensure constant workload per
        iteration) */
+    const float partial_avg = avg_velocities();
+    float avg = 0.0;
 
-    MPI_Allgather(w_particles, w_n_particles, particletype, particles, w_n_particles, particletype, MPI_COMM_WORLD);
+    MPI_Reduce(&partial_avg, &avg, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
 
-    // to sub with a reduction
-    if (0 == my_rank) {
-      const float avg = avg_velocities();
-      if (0 == my_rank && s % 10 == 0)
-        printf("step %5d, avgV=%f\n", s, avg);
-    }
-
-    MPI_Barrier(MPI_COMM_WORLD);
+    if (0 == my_rank && s % 10 == 0)
+      printf("step %5d, avgV=%f\n", s, avg);
   }
 
   if (0 == my_rank) {
