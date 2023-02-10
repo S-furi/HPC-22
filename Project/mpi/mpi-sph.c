@@ -473,6 +473,7 @@ int main(int argc, char **argv) {
   displs = (int*)malloc(comm_sz * sizeof(*displs)); assert(displs != NULL);
 
   MPI_Bcast(&n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&nsteps, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
   /* compute starting and ending position of each block */
   for(int i = 0; i < comm_sz; i++) {
