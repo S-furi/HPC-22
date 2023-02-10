@@ -281,9 +281,27 @@ float avg_velocities(void) {
 
 void update(void) {
   compute_density_pressure();
-  MPI_Allgather(w_particles, w_n_particles, particletype, particles, w_n_particles, particletype, MPI_COMM_WORLD);
+
+  MPI_Allgather(w_particles,   /* sendbuf   */
+                w_n_particles, /* sendcount */
+                particletype,  /* sendtype  */
+                particles,     /* recvbuf   */
+                w_n_particles, /* recvcount */
+                particletype,  /* recvtype  */
+                MPI_COMM_WORLD /* comm      */
+  );
+
   compute_forces();
-  MPI_Allgather(w_particles, w_n_particles, particletype, particles, w_n_particles, particletype, MPI_COMM_WORLD);
+
+  MPI_Allgather(w_particles,   /* sendbuf   */
+                w_n_particles, /* sendcount */
+                particletype,  /* sendtype  */
+                particles,     /* recvbuf   */
+                w_n_particles, /* recvcount */
+                particletype,  /* recvtype  */
+                MPI_COMM_WORLD /* comm      */
+  );
+
   integrate();
 }
 
@@ -412,14 +430,13 @@ int main(int argc, char **argv) {
   displs[0] = 0;
 
   /* define structured type and commit it */
-  MPI_Type_create_struct(1,        /* count                     */
-                         blklens,  /* array of blocklen         */
-                         displs,   /* array of displacements    */
+  MPI_Type_create_struct(1,       /* count                     */
+                         blklens, /* array of blocklen         */
+                         displs,  /* array of displacements    */
                          oldtype, /* array of types            */
                          &particletype);
 
   MPI_Type_commit(&particletype);
-
 
   if (0 == my_rank) {
     if (argc > 3) {
@@ -442,52 +459,49 @@ int main(int argc, char **argv) {
     }
 
     if (n % comm_sz != 0) {
-      printf("By now, provide a number of processes that is divisible by the number of particles\n");
+      printf("By now, provide a number of processes that is divisible by the "
+             "number of particles\n");
       return EXIT_FAILURE;
     }
 
     w_n_particles = n / comm_sz;
 
     init_sph(n);
-
   }
-
 
   MPI_Bcast(&n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
   MPI_Bcast(&w_n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
   MPI_Bcast(particles, n_particles, particletype, 0, MPI_COMM_WORLD);
 
-  w_particles = (particle_t*)malloc(w_n_particles * sizeof(*w_particles));
-
-
+  w_particles = (particle_t *)malloc(w_n_particles * sizeof(*w_particles));
 
   if (0 == my_rank) {
     tstart = hpc_gettime();
   }
- 
+
   for (int s = 0; s < nsteps; s++) {
 
-    MPI_Scatter(particles,      /* senbuf*/
-                w_n_particles,  /* sendcount */
-                particletype,   /* sendtype */
-                w_particles,    /* recvbuf */
-                w_n_particles,  /* recvcount */
-                particletype,   /* recvtype */
-                0,              /* root */
-                MPI_COMM_WORLD  /* comm */
-                );
+    MPI_Scatter(particles,     /* senbuf    */
+                w_n_particles, /* sendcount */
+                particletype,  /* sendtype  */
+                w_particles,   /* recvbuf   */
+                w_n_particles, /* recvcount */
+                particletype,  /* recvtype  */
+                0,             /* root      */
+                MPI_COMM_WORLD /* comm       */
+    );
 
     update();
 
-    MPI_Allgather(w_particles,      /* sendbuf */
-                  w_n_particles,    /* sendcount */
-                  particletype,     /* sendtype */
-                  particles,        /* recvbuf */
-                  w_n_particles,    /* recvcount */
-                  particletype,     /* recvtype */
-                  MPI_COMM_WORLD    /* comm */
-                  );
+    MPI_Allgather(w_particles,   /* sendbuf   */
+                  w_n_particles, /* sendcount */
+                  particletype,  /* sendtype  */
+                  particles,     /* recvbuf   */
+                  w_n_particles, /* recvcount */
+                  particletype,  /* recvtype  */
+                  MPI_COMM_WORLD /* comm       */
+    );
 
     /* the average velocities MUST be computed at each step, even
        if it is not shown (to ensure constant workload per
@@ -495,7 +509,14 @@ int main(int argc, char **argv) {
     const float partial_avg = avg_velocities();
     float avg = 0.0;
 
-    MPI_Reduce(&partial_avg, &avg, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&partial_avg,  /* sendbuf    */
+               &avg,          /* recvbuf    */
+               1,             /* recvcount  */
+               MPI_FLOAT,     /* datatype   */
+               MPI_SUM,       /* op         */
+               0,             /* root       */
+               MPI_COMM_WORLD /* comm       */
+    );
 
     if (0 == my_rank && s % 10 == 0)
       printf("step %5d, avgV=%f\n", s, avg);
@@ -504,7 +525,8 @@ int main(int argc, char **argv) {
   if (0 == my_rank) {
     printf("Elapsed time: %f\n", hpc_gettime() - tstart);
   }
-  
+
+  free(w_particles);
   MPI_Finalize();
 
 #endif
