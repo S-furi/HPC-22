@@ -97,9 +97,14 @@ typedef struct {
 } particle_t;
 
 particle_t *particles;
-int n_particles = 0; // number of currently active particles
+particle_t *w_particles;
+
+int n_particles = 0;   // number of currently active particles
+int w_n_particles = 0; // number of particles per process
 
 MPI_Datatype particletype;
+
+int my_rank = 0;
 
 /**
  * Return a random value in [a, b]
@@ -171,8 +176,8 @@ void compute_density_pressure(void) {
      et al. */
   const float POLY6 = 4.0 / (M_PI * pow(H, 8));
 
-  for (int i = 0; i < n_particles; i++) {
-    particle_t *pi = &particles[i];
+  for (int i = 0; i < w_n_particles; i++) {
+    particle_t *pi = &w_particles[i];
     pi->rho = 0.0;
     for (int j = 0; j < n_particles; j++) {
       const particle_t *pj = &particles[j];
@@ -197,8 +202,8 @@ void compute_forces(void) {
   const float VISC_LAP = 40.0 / (M_PI * pow(H, 5));
   const float EPS = 1e-6;
 
-  for (int i = 0; i < n_particles; i++) {
-    particle_t *pi = &particles[i];
+  for (int i = 0; i < w_n_particles; i++) {
+    particle_t *pi = &w_particles[i];
     float fpress_x = 0.0, fpress_y = 0.0;
     float fvisc_x = 0.0, fvisc_y = 0.0;
 
@@ -236,8 +241,8 @@ void compute_forces(void) {
 }
 
 void integrate(void) {
-  for (int i = 0; i < n_particles; i++) {
-    particle_t *p = &particles[i];
+  for (int i = 0; i < w_n_particles; i++) {
+    particle_t *p = &w_particles[i];
     // forward Euler integration
     p->vx += DT * p->fx / p->rho;
     p->vy += DT * p->fy / p->rho;
@@ -276,7 +281,9 @@ float avg_velocities(void) {
 
 void update(void) {
   compute_density_pressure();
+  MPI_Allgather(w_particles, w_n_particles, particletype, particles, w_n_particles, particletype, MPI_COMM_WORLD);
   compute_forces();
+  MPI_Allgather(w_particles, w_n_particles, particletype, particles, w_n_particles, particletype, MPI_COMM_WORLD);
   integrate();
 }
 
@@ -387,20 +394,20 @@ int main(int argc, char **argv) {
 #else
   int n = DAM_PARTICLES;
   int nsteps = 50;
-  double t_start = 0.0;
+  double tstart = 0.0; // forward declaration
 
-  /* MPI initialization */
-  int my_rank, comm_sz;
+  /* MPI INITIALIZATION */
+
+  int comm_sz;
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
 
-  /* MPI Struct Datatype creation */
-  MPI_Datatype oldtypes[1];
+  MPI_Datatype oldtype[1];
   int blklens[1];
   MPI_Aint displs[1];
 
-  oldtypes[0] = MPI_FLOAT;
+  oldtype[0] = MPI_FLOAT;
   blklens[0] = 8;
   displs[0] = 0;
 
@@ -408,10 +415,11 @@ int main(int argc, char **argv) {
   MPI_Type_create_struct(1,        /* count                     */
                          blklens,  /* array of blocklen         */
                          displs,   /* array of displacements    */
-                         oldtypes, /* array of types            */
+                         oldtype, /* array of types            */
                          &particletype);
 
   MPI_Type_commit(&particletype);
+
 
   if (0 == my_rank) {
     if (argc > 3) {
@@ -433,31 +441,65 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
     }
 
+    if (n % comm_sz != 0) {
+      printf("By now, provide a number of processes that is divisible by the number of particles\n");
+      return EXIT_FAILURE;
+    }
+
+    w_n_particles = n / comm_sz;
+
     init_sph(n);
 
-    t_start = hpc_gettime();
   }
 
+
   MPI_Bcast(&n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&w_n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
   MPI_Bcast(particles, n_particles, particletype, 0, MPI_COMM_WORLD);
 
-  printf("%d) Ricevuto buffer\n", my_rank);
+  w_particles = (particle_t*)malloc(w_n_particles * sizeof(*w_particles));
 
+
+
+  if (0 == my_rank) {
+    tstart = hpc_gettime();
+  }
+ 
   for (int s = 0; s < nsteps; s++) {
+
+    MPI_Scatter(particles,
+                w_n_particles,
+                particletype,
+                w_particles,
+                w_n_particles,
+                particletype,
+                0,
+                MPI_COMM_WORLD);
+
     update();
     /* the average velocities MUST be computed at each step, even
        if it is not shown (to ensure constant workload per
        iteration) */
-    const float avg = avg_velocities();
-    if (0 == my_rank && s % 10 == 0)
-      printf("step %5d, avgV=%f\n", s, avg);
-  }
-  if (0 == my_rank) {
-    const double t_end = hpc_gettime() - t_start;
-    printf("Elapsed time=%fs\n", t_end);
+
+    MPI_Allgather(w_particles, w_n_particles, particletype, particles, w_n_particles, particletype, MPI_COMM_WORLD);
+
+    // to sub with a reduction
+    if (0 == my_rank) {
+      const float avg = avg_velocities();
+      if (0 == my_rank && s % 10 == 0)
+        printf("step %5d, avgV=%f\n", s, avg);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
   }
 
+  if (0 == my_rank) {
+    printf("Elapsed time: %f\n", hpc_gettime() - tstart);
+  }
+  
   MPI_Finalize();
+
 #endif
   free(particles);
   return EXIT_SUCCESS;
