@@ -97,17 +97,14 @@ typedef struct {
 } particle_t;
 
 particle_t *particles;
-particle_t *w_particles;
+particle_t *w_particles; // working particles local for each process
 
 int n_particles = 0;   // number of currently active particles
 int w_n_particles = 0; // number of particles per process
 
-MPI_Datatype particletype;
-
-int my_rank = 0;
+MPI_Datatype particletype; // MPI_Datatype for particle_t struct
 
 /* Scatterv/Gatherv offsets arrays */
-
 int *sendcounts = NULL;
 int *displs = NULL;
 
@@ -181,6 +178,7 @@ void compute_density_pressure(void) {
      et al. */
   const float POLY6 = 4.0 / (M_PI * pow(H, 8));
 
+  /* Each process handle it's subset of particles */
   for (int i = 0; i < w_n_particles; i++) {
     particle_t *pi = &w_particles[i];
     pi->rho = 0.0;
@@ -212,6 +210,7 @@ void compute_forces(void) {
     float fpress_x = 0.0, fpress_y = 0.0;
     float fvisc_x = 0.0, fvisc_y = 0.0;
 
+    /* Each process handle it's subset of particles */
     for (int j = 0; j < n_particles; j++) {
       const particle_t *pj = &particles[j];
 
@@ -246,6 +245,7 @@ void compute_forces(void) {
 }
 
 void integrate(void) {
+  /* Each process handle it's subset of particles */
   for (int i = 0; i < w_n_particles; i++) {
     particle_t *p = &w_particles[i];
     // forward Euler integration
@@ -276,6 +276,7 @@ void integrate(void) {
 
 float avg_velocities(void) {
   double result = 0.0;
+  /* Each process handle it's subset of particles */
   for (int i = 0; i < w_n_particles; i++) {
     /* the hypot(x,y) function is equivalent to sqrt(x*x +
        y*y); */
@@ -284,9 +285,14 @@ float avg_velocities(void) {
   return result;
 }
 
+/* In this MPI version, at each step of this function, each
+ * process must communicate, receive and update it's 
+ * particles array to every process of the communicator */
 void update(void) {
   compute_density_pressure();
 
+  /* Using Allgatherv for shorter code and possibile
+   * optimization by the compiler */
   MPI_Allgatherv(w_particles,  /* sendbuf       */
                 w_n_particles, /* sendcount     */
                 particletype,  /* sendtype      */
@@ -422,12 +428,12 @@ int main(int argc, char **argv) {
   double tstart = 0.0; // forward declaration
 
   /* MPI INITIALIZATION */
-
-  int comm_sz;
+  int comm_sz, my_rank;
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
 
+  /* Custom Datatype setup */
   MPI_Datatype oldtype[1];
   int blklens[1];
   MPI_Aint displ[1];
@@ -436,7 +442,7 @@ int main(int argc, char **argv) {
   blklens[0] = 8;
   displ[0] = 0;
 
-  /* define structured type and commit it */
+  /* Define structured datatype and commit it */
   MPI_Type_create_struct(1,       /* count                     */
                          blklens, /* array of blocklen         */
                          displ,  /* array of displacements    */
@@ -445,9 +451,12 @@ int main(int argc, char **argv) {
 
   MPI_Type_commit(&particletype);
 
+  /* Only process 0 checks for correct input, and if no
+   * errors are found, initializes particles */
   if (0 == my_rank) {
     if (argc > 3) {
       fprintf(stderr, "Usage: %s [nparticles [nsteps]]\n", argv[0]);
+      MPI_Finalize();
       return EXIT_FAILURE;
     }
 
@@ -462,6 +471,7 @@ int main(int argc, char **argv) {
     if (n > MAX_PARTICLES) {
       fprintf(stderr, "FATAL: the maximum number of particles is %d\n",
               MAX_PARTICLES);
+      MPI_Finalize();
       return EXIT_FAILURE;
     }
 
@@ -472,10 +482,12 @@ int main(int argc, char **argv) {
   sendcounts = (int*)malloc(comm_sz * sizeof(*sendcounts)); assert(sendcounts != NULL);
   displs = (int*)malloc(comm_sz * sizeof(*displs)); assert(displs != NULL);
 
+  /* Proc 0 sends to every process of the communicator the total number of 
+   * particles and the number of steps in input */
   MPI_Bcast(&n_particles, 1, MPI_INT, 0, MPI_COMM_WORLD);
   MPI_Bcast(&nsteps, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-  /* compute starting and ending position of each block */
+  /* Compute starting and ending position of each block */
   for(int i = 0; i < comm_sz; i++) {
     const int local_start = n_particles * i / comm_sz;
     const int local_end = n_particles * (i + 1) / comm_sz;
@@ -487,14 +499,17 @@ int main(int argc, char **argv) {
   w_n_particles = sendcounts[my_rank];
   w_particles = (particle_t *)malloc(w_n_particles * sizeof(*w_particles));
 
+  /* Finally, proc 0 shares to every process the generated partiucles */
   MPI_Bcast(particles, n_particles, particletype, 0, MPI_COMM_WORLD);
 
+  /* Only Proc 0 keeps track of the execution time */
   if (0 == my_rank) {
     tstart = hpc_gettime();
   }
 
   for (int s = 0; s < nsteps; s++) {
 
+    /* Every process retrieves their subset of particles to work with */
     MPI_Scatterv(particles,    /* senbuf        */
                 sendcounts,    /* sendcounts     */
                 displs,        /* displacements */ 
@@ -508,6 +523,8 @@ int main(int argc, char **argv) {
 
     update();
 
+    /* Update global particles array with computed values above, and
+     * broadcast it to each process */
     MPI_Allgatherv(w_particles,  /* sendbuf       */
                   w_n_particles, /* sendcount     */
                   particletype,  /* sendtype      */
@@ -524,6 +541,7 @@ int main(int argc, char **argv) {
     const float partial_avg = avg_velocities();
     float avg = 0.0;
 
+    /* Computing avg_velocities through a reduction for maximizing performances */
     MPI_Reduce(&partial_avg,  /* sendbuf    */
                &avg,          /* recvbuf    */
                1,             /* recvcount  */
@@ -541,6 +559,7 @@ int main(int argc, char **argv) {
     printf("Elapsed time: %f\n", hpc_gettime() - tstart);
   }
 
+  /* Releasing resources for local working array */
   free(w_particles);
   MPI_Finalize();
 
