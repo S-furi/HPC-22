@@ -169,28 +169,29 @@ void compute_density_pressure(void) {
   const float POLY6 = 4.0 / (M_PI * pow(H, 8));
 
   /* Storing each value of rho foreach particle in this shared array */
-  float *rhos = (float*)malloc(n_particles * sizeof(float)); assert(rhos != NULL);
+  float *rhos = (float *)malloc(n_particles * sizeof(float));
+  assert(rhos != NULL);
 
-#pragma omp parallel default(none) \
-    shared(particles, n_particles, rhos, HSQ, POLY6, MASS, GAS_CONST, REST_DENS)
+#pragma omp parallel default(none) shared(particles, n_particles, rhos, HSQ,   \
+                                          POLY6, MASS, GAS_CONST, REST_DENS)
   {
     /* Initializing each value of rho to 0, due to possible dirty
-     * value stored when allocating an memory. 
+     * value stored when allocating an memory.
      * This operation might introduce a slight overhead, but
      * necessary due to the reduction computed after. */
 #pragma omp for
-    for(int i = 0; i < n_particles; i++) {
+    for (int i = 0; i < n_particles; i++) {
       rhos[i] = 0.0;
     }
 
     particle_t *pi = NULL;
 
-    /* Parallelizing the next two loops and performing a reduction on rhos array.
-     * The reduction is necessary because when using the collapse clause more 
-     * than 1 processor can compute the density and pressure on the i-th 
+    /* Parallelizing the next two loops and performing a reduction on rhos
+     * array. The reduction is necessary because when using the collapse clause
+     * more than 1 processor can compute the density and pressure on the i-th
      * particle of the outer loop.
      * NOTE: Reductions on arrays are allowed only with OpenMP versions > 4.5*/
-#pragma omp for collapse(2) reduction(+:rhos[:n_particles])
+#pragma omp for collapse(2) reduction(+ : rhos[:n_particles])
     for (int i = 0; i < n_particles; i++) {
       for (int j = 0; j < n_particles; j++) {
         pi = &particles[i];
@@ -208,7 +209,7 @@ void compute_density_pressure(void) {
 
 /* Embarassingly parallel assignement to each particles' rho and p properties */
 #pragma omp for
-    for(int i = 0; i < n_particles; i++) {
+    for (int i = 0; i < n_particles; i++) {
       particles[i].rho = rhos[i];
       particles[i].p = GAS_CONST * (rhos[i] - REST_DENS);
     }
@@ -226,29 +227,34 @@ void compute_forces(void) {
   const float VISC_LAP = 40.0 / (M_PI * pow(H, 5));
   const float EPS = 1e-6;
 
-  float* fpress_x = (float*)malloc(n_particles * sizeof(float)); assert(fpress_x != NULL);
-  float* fpress_y = (float*)malloc(n_particles * sizeof(float)); assert(fpress_y != NULL);
-  float* fvisc_x = (float*)malloc(n_particles * sizeof(float)); assert(fvisc_x != NULL);
-  float* fvisc_y = (float*)malloc(n_particles * sizeof(float)); assert(fvisc_y != NULL);
+  float *fpress_x = (float *)malloc(n_particles * sizeof(float));
+  assert(fpress_x != NULL);
+  float *fpress_y = (float *)malloc(n_particles * sizeof(float));
+  assert(fpress_y != NULL);
+  float *fvisc_x = (float *)malloc(n_particles * sizeof(float));
+  assert(fvisc_x != NULL);
+  float *fvisc_y = (float *)malloc(n_particles * sizeof(float));
+  assert(fvisc_y != NULL);
 
-#pragma omp parallel default(none) \
-  shared(fpress_x, fpress_y, fvisc_x, fvisc_y, particles, n_particles, SPIKY_GRAD, VISC_LAP, EPS, MASS, VISC, H, Gx, Gy)
+#pragma omp parallel default(none)                                             \
+    shared(fpress_x, fpress_y, fvisc_x, fvisc_y, particles, n_particles,       \
+           SPIKY_GRAD, VISC_LAP, EPS, MASS, VISC, H, Gx, Gy)
   {
     particle_t *pi = NULL;
 
-    /* Initializing each value of the reduction arrays to 0, due to possible 
-     * dirty value stored when allocating an memory. This operation might 
-     * introduce a slight overhead, but necessary due to the reduction 
+    /* Initializing each value of the reduction arrays to 0, due to possible
+     * dirty value stored when allocating an memory. This operation might
+     * introduce a slight overhead, but necessary due to the reduction
      * computed after. */
 #pragma omp for
-    for(int i = 0; i < n_particles; i++) {
+    for (int i = 0; i < n_particles; i++) {
       fpress_x[i] = 0.0;
       fpress_y[i] = 0.0;
       fvisc_x[i] = 0.0;
       fvisc_y[i] = 0.0;
     }
 
-    /* Parallelizing the next two loops and performing a reduction on 
+    /* Parallelizing the next two loops and performing a reduction on
      * four arrays simultaneously. The reduction is necessary because
      * when using the collapse clause more than 1 processor can compute
      * the forces one the i-th particle of the outer loop.
@@ -266,28 +272,28 @@ void compute_forces(void) {
         const float dx = pj->x - pi->x;
         const float dy = pj->y - pi->y;
         const float dist =
-          hypotf(dx, dy) + EPS; // avoids division by zero later on
+            hypotf(dx, dy) + EPS; // avoids division by zero later on
 
         if (dist < H) {
           const float norm_dx = dx / dist;
           const float norm_dy = dy / dist;
           // compute pressure force contribution
           fpress_x[i] += -norm_dx * MASS * (pi->p + pj->p) / (2 * pj->rho) *
-            SPIKY_GRAD * pow(H - dist, 3);
+                         SPIKY_GRAD * pow(H - dist, 3);
           fpress_y[i] += -norm_dy * MASS * (pi->p + pj->p) / (2 * pj->rho) *
-            SPIKY_GRAD * pow(H - dist, 3);
+                         SPIKY_GRAD * pow(H - dist, 3);
           // compute viscosity force contribution
           fvisc_x[i] +=
-            VISC * MASS * (pj->vx - pi->vx) / pj->rho * VISC_LAP * (H - dist);
+              VISC * MASS * (pj->vx - pi->vx) / pj->rho * VISC_LAP * (H - dist);
           fvisc_y[i] +=
-            VISC * MASS * (pj->vy - pi->vy) / pj->rho * VISC_LAP * (H - dist);
+              VISC * MASS * (pj->vy - pi->vy) / pj->rho * VISC_LAP * (H - dist);
         }
       }
     }
 
     /* Updating the i-th particle with the i-th value of fpress and fvisc */
 #pragma omp for
-    for(int i = 0; i < n_particles; i++) {
+    for (int i = 0; i < n_particles; i++) {
       const float fgrav_x = Gx * MASS / particles[i].rho;
       const float fgrav_y = Gy * MASS / particles[i].rho;
       particles[i].fx = fpress_x[i] + fvisc_x[i] + fgrav_x;
@@ -304,8 +310,8 @@ void compute_forces(void) {
 
 void integrate(void) {
   /* Embarassingly parallel loop */
-#pragma omp parallel for default(none) \
-  shared(particles, n_particles, DT, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT)
+#pragma omp parallel for default(none) shared(                                 \
+    particles, n_particles, DT, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT)
   for (int i = 0; i < n_particles; i++) {
     particle_t *p = &particles[i];
     // forward Euler integration
