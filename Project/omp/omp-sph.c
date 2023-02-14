@@ -250,6 +250,8 @@ void compute_forces(void) {
 }
 
 void integrate(void) {
+#pragma omp parallel for default(none) \
+  shared(particles, n_particles, DT, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT)
   for (int i = 0; i < n_particles; i++) {
     particle_t *p = &particles[i];
     // forward Euler integration
@@ -280,6 +282,7 @@ void integrate(void) {
 
 float avg_velocities(void) {
   double result = 0.0;
+#pragma omp parallel for reduction(+:result) default(none) shared(particles, n_particles)
   for (int i = 0; i < n_particles; i++) {
     /* the hypot(x,y) function is equivalent to sqrt(x*x +
        y*y); */
