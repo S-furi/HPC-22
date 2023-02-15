@@ -191,7 +191,7 @@ void compute_density_pressure(void) {
      * more than 1 processor can compute the density and pressure on the i-th
      * particle of the outer loop.
      * NOTE: Reductions on arrays are allowed only with OpenMP versions > 4.5*/
-#pragma omp for collapse(2) reduction(+ : rhos[:n_particles])
+#pragma omp for collapse(2) reduction(+:rhos[:n_particles])
     for (int i = 0; i < n_particles; i++) {
       for (int j = 0; j < n_particles; j++) {
         pi = &particles[i];
