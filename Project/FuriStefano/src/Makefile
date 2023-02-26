@@ -5,7 +5,7 @@
 #
 # - omp-sph: builds the parallel version using OpenMP
 #
-# - sph.gui: builds the parallel version using MPI
+# - omp-sph: builds the parallel version using MPI
 #
 # - all: builds both the MPI and OpenMP versions
 #
